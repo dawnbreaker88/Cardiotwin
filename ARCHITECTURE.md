@@ -157,9 +157,10 @@ class PatientService:
     - get_all_patient_ids()   # Group by risk level
 ```
 
-**Data Source**: `nii.csv` (root directory)
-- Columns: Patient_ID, Age, Heart_Fibrosis_Index, Heart_Wall_Thickness, etc.
-- Status_Label: Safe, Warning, CRITICAL_STOP
+**Data Source**: `sample_patient_data_20_labeled.csv` (Standardized)
+- **Schema Mapping**: Automatically detects and maps "Demo" vs "Legacy" CSV formats.
+- **Persistent IDs**: Generates and persists unique `Patient_ID`s (e.g., P001, P002) directly into the CSV.
+- **Risk Mapping**: Maps `risk_label` (Low/Moderate/High) to internal `Status_Label` (Safe/Warning/Critical).
 
 #### 3. **Mapper Service** (`mapper.py`)
 **Responsibility**: Convert ML predictions to visual parameters
@@ -239,8 +240,8 @@ const [prediction, setPrediction]     // ML result
 const [visuals, setVisuals]           // Heart parameters
 const [patientData, setPatientData]   // Current patient
 const [isLoading, setIsLoading]       // Loading state
-const [showSettings, setShowSettings] // Modal state
-const [showReport, setShowReport]     // Modal state
+const [showSettings, setShowSettings] // Global Settings Modal visibility
+const [showReport, setShowReport]     // Report Modal visibility
 ```
 
 **Layout Structure**:
@@ -278,20 +279,18 @@ const [showReport, setShowReport]     // Modal state
 </Canvas>
 ```
 
-#### **HeartModel.jsx** (3D Heart)
+#### **HeartModel.jsx** (3D Heart Engine)
 **Dynamic Properties**:
-- **Color**: Changes based on risk (green/amber/red)
-- **Scale**: Pulsates with heart rate
-- **Rotation**: Slow auto-rotation
-- **Animation**: Contraction intensity affects scale amplitude
+- **Color**: Changes based on risk (green/amber/red).
+- **Scale**: Dynamic pulsation using a dual-phase (Systole/Diastole) engine.
+- **Wireframe Overlay**: A pulsing digital twin shell that syncs with the heart rhythm.
+- **Non-Uniform Scaling**: Simulates organic "squeezing" by varying X, Y, and Z axis amplitudes.
 
-**Implementation**:
-```javascript
-useFrame(() => {
-  const scale = 1 + Math.sin(Date.now() * 0.001 * heart_rate / 60) * 0.1 * contraction_intensity
-  meshRef.current.scale.setScalar(scale)
-})
-```
+**Animation Logic**:
+Unlike a simple sine wave, the model uses a biological rhythm:
+1. **Systole (Contraction)**: Fast, aggressive contraction (30% of cycle).
+2. **Diastole (Relaxation)**: Slower, organic return to rest (70% of cycle).
+3. **Arrhythmia Jitter**: Multi-frequency waves applied during "Critical" states to simulate fibrillation.
 
 #### **InputForm.jsx** (Dual Mode Input)
 **Modes**:
@@ -923,8 +922,8 @@ npm install
 ## 👥 Team & Contact
 
 **Project**: CardioTwin - AI Heart Twin  
-**Version**: 1.0.0  
-**Last Updated**: 2026-02-02  
+**Version**: 1.1.0  
+**Last Updated**: 2026-02-14  
 **Maintainer**: Prabhath  
 
 ---
