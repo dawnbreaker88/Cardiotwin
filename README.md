@@ -4,7 +4,7 @@
 [![Flask](https://img.shields.io/badge/Backend-Flask-000000?logo=flask&logoColor=white)](https://flask.palletsprojects.com/)
 [![Three.js](https://img.shields.io/badge/Graphics-Three.js-000000?logo=three.js&logoColor=white)](https://threejs.org/)
 [![Gemini AI](https://img.shields.io/badge/AI-Gemini-8E75B2?logo=google-gemini&logoColor=white)](https://ai.google.dev/)
-[![ML](https://img.shields.io/badge/Model-Random%20Forest-orange?logo=scikit-learn&logoColor=white)](https://scikit-learn.org/)
+[![ML](https://img.shields.io/badge/Model-LightGBM-brightgreen?logo=lightgbm&logoColor=white)](https://scikit-learn.org/)
 
 **CardioTwin** is a sophisticated onco-cardiology decision support system that bridges the gap between machine learning predictions and clinical visualization. It provides real-time risk assessment for Chemotherapy-Induced Cardiotoxicity (CIC) through a high-fidelity 3D "Digital Twin" of the human heart.
 
