@@ -5,7 +5,9 @@ import * as THREE from 'three'
 
 // Preload the model
 // Adjust path to match the directory found
-const MODEL_PATH = '/models/cardiac_anatomy_external_view_of_human_heart/scene.gltf'
+// Preload the model
+// Adjust path to match the directory found
+const MODEL_PATH = '/models/new_heart/scene.gltf'
 
 export function HeartModel({ visuals }) {
     const group = useRef()
@@ -16,7 +18,6 @@ export function HeartModel({ visuals }) {
 
     // Refs for animation
     const timeRef = useRef(0)
-    const scaleBase = useRef(new THREE.Vector3(1, 1, 1))
 
     // Destructure visuals
     const {
@@ -29,6 +30,11 @@ export function HeartModel({ visuals }) {
     // Calculate beat frequency (beats per second)
     // BPM / 60 = Hz
     const frequency = heart_rate / 60.0
+
+    // Base scale for the new model. 
+    // Previous model needed 20.0, new one might range 0.01 to 100.
+    // Start with 2.5
+    const BASE_SCALE = 2.5
 
     useFrame((state, delta) => {
         if (!group.current) return
@@ -50,22 +56,16 @@ export function HeartModel({ visuals }) {
         }
 
         // Contraction (Scale) logic
-        // We want the heart to shrink (contract) and expand (relax)
         // Map beat (-1 to 1) to Scale
-        // Normal scale is 0.05 (based on likely model size, we'll need to adjust initial scale)
-        const baseScale = 20.0 // Increased from 0.5
-
-        // Contraction: when beat is high, heart is compressed? 
-        // Usually systole (contraction) is rapid.
 
         // Simple pulsating effect:
         // Scale varies between 1.0 and (1.0 - intensity * 0.1)
         const scaleFactor = 1.0 + (beat * 0.05 * contraction_intensity)
 
         group.current.scale.set(
-            20.0 * scaleFactor,
-            20.0 * scaleFactor,
-            20.0 * scaleFactor
+            BASE_SCALE * scaleFactor,
+            BASE_SCALE * scaleFactor,
+            BASE_SCALE * scaleFactor
         )
 
         // Color tinting (Pulse color)
@@ -73,11 +73,13 @@ export function HeartModel({ visuals }) {
         clonedScene.traverse((child) => {
             if (child.isMesh) {
                 // Apply slight color tint based on risk
-                // child.material.color.set(color) // This overrides texture, be careful
-                // Instead, maybe use emissive to show "danger"
-                if (child.material.emissive) {
-                    child.material.emissive.set(color)
-                    child.material.emissiveIntensity = 0.2 + (beat * 0.1)
+                if (child.material) {
+                    // Check if material supports emissive
+                    if (child.material.emissive) {
+                        child.material.emissive.set(color)
+                        // Gentle pulse
+                        child.material.emissiveIntensity = 0.1 + (beat * 0.05)
+                    }
                 }
             }
         })
@@ -86,7 +88,7 @@ export function HeartModel({ visuals }) {
     // Set initial scale/position
     useEffect(() => {
         if (group.current) {
-            group.current.scale.set(20.0, 20.0, 20.0)
+            group.current.scale.set(BASE_SCALE, BASE_SCALE, BASE_SCALE)
         }
     }, [])
 

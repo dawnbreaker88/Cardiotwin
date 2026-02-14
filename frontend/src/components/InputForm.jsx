@@ -1,15 +1,10 @@
 import React, { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Activity, Database, Edit3 } from 'lucide-react';
+import { Activity, Database, Edit3, UserPlus } from 'lucide-react';
 import { ManualPredictionForm } from './ManualPredictionForm';
 import { PatientLookup } from './PatientLookup';
 
-export function InputForm({ onManualSubmit, onPatientLoaded, isLoading, patientData }) {
+export function InputForm({ onManualSubmit, onPatientLoaded, onRegisterPatient, isLoading, patientData }) {
     const [activeTab, setActiveTab] = useState('lookup'); // 'lookup' or 'manual'
-
-    // Switch to manual tab when patient data is loaded externally
-    // Optional: Only if you want auto-switching. User might want to stay on lookup.
-    // For now, let's just pass the data.
 
     return (
         <div className="glass-card p-6 h-full flex flex-col overflow-hidden">
@@ -21,6 +16,13 @@ export function InputForm({ onManualSubmit, onPatientLoaded, isLoading, patientD
                     </div>
                     <h2 className="text-lg font-semibold text-white">Input Data</h2>
                 </div>
+                <button
+                    onClick={onRegisterPatient}
+                    className="p-2 bg-white/5 border border-white/10 rounded-lg text-purple-400 hover:bg-white/10 transition-all"
+                    title="Register New Patient"
+                >
+                    <UserPlus size={18} />
+                </button>
             </div>
 
             {/* Tabs Toggle */}

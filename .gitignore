@@ -38,3 +38,6 @@ frontend/build/
 
 # Logs
 *.log
+
+# Sensitive config
+backend/utils/config.json

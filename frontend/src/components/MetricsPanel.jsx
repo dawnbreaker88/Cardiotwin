@@ -46,46 +46,74 @@ const MetricCard = ({ label, value, unit, icon: Icon, color, delay }) => {
 export function MetricsPanel({ prediction, visuals }) {
     if (!prediction) return (
         <div className="h-full flex items-center justify-center text-gray-500 text-sm">
-            Awaiting analysis...
+            <div className="flex flex-col items-center gap-3">
+                <Activity className="animate-pulse text-gray-700" size={32} />
+                <span>Awaiting analysis...</span>
+            </div>
         </div>
     );
 
     const { class: riskClass, confidence } = prediction;
-    const { heart_rate, hrv, risk_score } = visuals;
+    const { heart_rate, hrv, risk_score, lvef, qtc } = visuals;
 
     const getRiskColorName = (level) => {
-        if (level === 'High') return 'red';
-        if (level === 'Medium') return 'yellow';
+        if (level === 'Critical') return 'rose';
+        if (level === 'Warning') return 'yellow';
         return 'green';
     };
 
     const colorName = getRiskColorName(riskClass);
     const theme = COLOR_MAP[colorName];
-    const RiskIcon = riskClass === 'High' ? AlertOctagon : riskClass === 'Medium' ? AlertTriangle : ShieldCheck;
+    const RiskIcon = riskClass === 'Critical' ? AlertOctagon : riskClass === 'Warning' ? AlertTriangle : ShieldCheck;
 
     return (
-        <div className="space-y-4 h-full overflow-y-auto custom-scrollbar pr-2">
-            <div className={`glass-card p-6 bg-gradient-to-br from-${colorName}-500/10 to-transparent border-${colorName}-500/20`}>
-                <div className="flex items-center gap-3 mb-4">
-                    <RiskIcon className={theme.text} size={24} />
-                    <h3 className="text-lg font-semibold text-white">Risk Analysis</h3>
+        <div className="space-y-4 h-full overflow-y-auto custom-scrollbar pr-2 pb-6">
+
+            {/* 1. Confidence Score at the Top */}
+            <MetricCard
+                label="Model Confidence"
+                value={(confidence * 100).toFixed(1)}
+                unit="%"
+                icon={ShieldCheck}
+                color="blue"
+                delay={0}
+            />
+
+            {/* 2. Risk Level Status (No numerical score per request) */}
+            <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className={`glass-card p-6 relative overflow-hidden border-${colorName}-500/30`}
+            >
+                {/* Decorative background glow */}
+                <div className={`absolute -right-4 -top-4 w-24 h-24 rounded-full blur-3xl opacity-20 ${theme.bg}`} />
+
+                <div className="flex flex-col items-center text-center">
+                    <span className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] mb-3">Model Output</span>
+                    <div className={`p-4 rounded-2xl mb-4 bg-white/5 border border-white/5 shadow-inner`}>
+                        <RiskIcon className={theme.text} size={40} />
+                    </div>
+                    <h3 className={`text-3xl font-black tracking-tighter uppercase mb-2 ${theme.text}`}>
+                        {riskClass}
+                    </h3>
+                    <div className="flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full animate-pulse ${theme.bg}`} />
+                        <span className="text-xs text-gray-400 font-medium">Risk Level Detected</span>
+                    </div>
                 </div>
-                <div className="flex items-end gap-2 mb-2">
-                    <span className={`text-4xl font-bold ${theme.text}`}>
-                        {(risk_score * 100).toFixed(0)}%
-                    </span>
-                    <span className="text-gray-400 mb-1">Risk Score</span>
-                </div>
-                <div className="w-full bg-gray-800 rounded-full h-2">
+
+                {/* Simplified Status Bar */}
+                <div className="mt-6 w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
                     <motion.div
-                        className={`h-2 rounded-full ${theme.bg}`}
+                        className={`h-full ${theme.bg} shadow-[0_0_10px_rgba(0,0,0,0.5)]`}
                         initial={{ width: 0 }}
-                        animate={{ width: `${risk_score * 100}%` }}
-                        transition={{ duration: 1 }}
+                        animate={{ width: riskClass === 'Critical' ? '100%' : riskClass === 'Warning' ? '60%' : '25%' }}
+                        transition={{ duration: 1.5, type: 'spring' }}
                     />
                 </div>
-            </div>
+            </motion.div>
 
+            {/* 3. Primary Metrics */}
             <div className="grid grid-cols-1 gap-4">
                 <MetricCard
                     label="Heart Rate"
@@ -96,19 +124,19 @@ export function MetricsPanel({ prediction, visuals }) {
                     delay={0.1}
                 />
                 <MetricCard
-                    label="HR Variability"
-                    value={hrv}
-                    unit="ms"
+                    label="LVEF (Ejection Fraction)"
+                    value={lvef ? lvef.toFixed(0) : '--'}
+                    unit="%"
                     icon={Activity}
                     color="purple"
                     delay={0.2}
                 />
                 <MetricCard
-                    label="Confidence"
-                    value={(confidence * 100).toFixed(1)}
-                    unit="%"
-                    icon={ShieldCheck}
-                    color="blue"
+                    label="QTc Interval"
+                    value={qtc ? qtc.toFixed(0) : '--'}
+                    unit="ms"
+                    icon={Zap}
+                    color="yellow"
                     delay={0.3}
                 />
             </div>

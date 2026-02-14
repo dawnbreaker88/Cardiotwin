@@ -3,8 +3,10 @@ import ReactMarkdown from 'react-markdown';
 import { X, Download, FileText, Loader, AlertTriangle } from 'lucide-react';
 import axios from 'axios';
 import { jsPDF } from "jspdf";
+import html2canvas from 'html2canvas';
 
 export function AIReportModal({ onClose, patientData, prediction }) {
+    const reportRef = React.useRef(null);
     const [report, setReport] = useState('');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -35,23 +37,49 @@ export function AIReportModal({ onClose, patientData, prediction }) {
         fetchReport();
     }, [patientData, prediction]);
 
-    const handleDownloadPDF = () => {
-        const doc = new jsPDF();
+    const handleDownloadPDF = async () => {
+        if (!reportRef.current) return;
 
-        // Simple PDF formatting
-        doc.setFontSize(22);
-        doc.text("CardioTwin Health Report", 20, 20);
+        try {
+            const canvas = await html2canvas(reportRef.current, {
+                scale: 2, // Higher quality
+                useCORS: true,
+                backgroundColor: '#0f0f11' // Match UI background
+            });
 
-        doc.setFontSize(12);
-        doc.text(`Date: ${new Date().toLocaleString()}`, 20, 30);
-        doc.text("------------------------------------------------", 20, 35);
+            const imgData = canvas.toDataURL('image/png');
+            const pdf = new jsPDF('p', 'mm', 'a4');
 
-        // Split markdown into lines and add (very basic text rendering)
-        // For production, use a library like html2pdf or advanced jspdf splitting
-        const lines = doc.splitTextToSize(report.replace(/#/g, ''), 170); // Remove markdown headers for plain text
-        doc.text(lines, 20, 45);
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
 
-        doc.save(`CardioTwin_Report_${new Date().toLocaleDateString()}.pdf`);
+            // Add Header
+            pdf.setFillColor(15, 15, 17); // Dark background
+            pdf.rect(0, 0, pdfWidth, 20, 'F');
+            pdf.setTextColor(255, 255, 255);
+            pdf.setFontSize(14);
+            pdf.text("CardioTwin Onco-Cardiac Assessment", 10, 13);
+
+            // Add Date
+            pdf.setFontSize(8);
+            pdf.text(`Generated: ${new Date().toLocaleString()}`, pdfWidth - 60, 13);
+
+            // Add the report image
+            pdf.addImage(imgData, 'PNG', 0, 20, pdfWidth, pdfHeight);
+
+            // Footer
+            const pageHeight = pdf.internal.pageSize.getHeight();
+            pdf.setFillColor(15, 15, 17);
+            pdf.rect(0, pageHeight - 10, pdfWidth, 10, 'F');
+            pdf.setTextColor(150, 150, 150);
+            pdf.setFontSize(8);
+            pdf.text("Confidential Clinical Decision Support - Not for Diagnosis", 10, pageHeight - 4);
+
+            pdf.save(`CardioTwin_Assessment_${new Date().toISOString().split('T')[0]}.pdf`);
+        } catch (err) {
+            console.error("PDF Generation Error:", err);
+            alert("Failed to generate PDF. Please try again.");
+        }
     };
 
     return (
@@ -97,7 +125,7 @@ export function AIReportModal({ onClose, patientData, prediction }) {
                             <button onClick={onClose} className="text-gray-400 hover:text-white underline mt-2">Close</button>
                         </div>
                     ) : (
-                        <div className="prose prose-invert max-w-none prose-headings:text-purple-100 prose-a:text-purple-400">
+                        <div ref={reportRef} className="prose prose-invert max-w-none prose-headings:text-purple-100 prose-a:text-purple-400 p-4">
                             <ReactMarkdown>{report}</ReactMarkdown>
                         </div>
                     )}

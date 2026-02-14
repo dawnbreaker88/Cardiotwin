@@ -1,8 +1,8 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Download, Share2, FileText } from 'lucide-react';
+import { Download, Share2, FileText, MessageSquare } from 'lucide-react';
 
-export function RiskSummaryBar({ visuals, onShowReport }) {
+export function RiskSummaryBar({ visuals, onShowReport, onOpenChat }) {
     if (!visuals) return null;
 
     const { risk_level, arrhythmia_type, color, heart_rate, hrv, risk_score } = visuals;
@@ -69,6 +69,14 @@ Based on the AI prediction of ${risk_level} risk, please consult a cardiologist 
                 <span className="text-sm text-gray-500 mr-4 hidden md:block">
                     *AI prediction based on input vitals
                 </span>
+                <button
+                    onClick={onOpenChat}
+                    className="flex items-center gap-2 px-4 py-3 bg-white/5 hover:bg-white/10 rounded-xl transition-colors text-purple-300 hover:text-white border border-purple-500/20 hover:border-purple-500/50"
+                    title="Open AI Chat"
+                >
+                    <MessageSquare size={18} />
+                    <span className="hidden md:inline">Chat</span>
+                </button>
                 <button
                     onClick={onShowReport}
                     className="flex items-center gap-2 px-4 py-3 bg-purple-600 hover:bg-purple-500 rounded-xl transition-colors text-white font-medium shadow-lg shadow-purple-900/20"

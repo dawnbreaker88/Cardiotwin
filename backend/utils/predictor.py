@@ -5,122 +5,105 @@ import os
 
 class Predictor:
     def __init__(self):
+        # Model path relative to backend/utils/predictor.py
+        # backend/utils/../model/cardiotoxicity_model.pkl -> backend/model/...
+        # But the model is in ROOT according to plan.md override (or user provided path)
+        # User provided: @[../../projects backup/heart-viz-project/cardiotoxicity_model.pkl]
+        # which is root.
+        
+        self.base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        self.model_path = os.path.join(self.base_dir, 'cardiotoxicity_model.pkl')
+        
         self.model = None
-        self.scaler = None
-        self.target_encoder = None
-        self.feature_names = None
-        self.load_artifacts()
+        self.load_model()
+        
+        # Define expected features based on plan.md
+        self.feature_names = [
+            'age_years', 'sex_binary', 'resting_heart_rate_bpm', 
+            'systolic_bp_mmHg', 'diastolic_bp_mmHg', 'heart_rate_variability_rmssd', 
+            'qtc_interval_ms', 'baseline_lvef_percent', 'chemo_cycles_count', 
+            'dose_per_cycle_mg_per_m2', 'cumulative_dose_mg_per_m2'
+        ]
 
-    def load_artifacts(self):
+    def load_model(self):
+        print(f"Loading model from {self.model_path}...")
         try:
-            # Adjust paths as needed based on where app.py runs
-            base_path = os.path.dirname(os.path.abspath(__file__))
-            model_dir = os.path.join(base_path, '../model')
-            
-            self.model = joblib.load(os.path.join(model_dir, 'trained_model.pkl'))
-            self.scaler = joblib.load(os.path.join(model_dir, 'scaler.pkl'))
-            # self.gender_encoder = joblib.load(os.path.join(model_dir, 'gender_encoder.pkl')) # REMOVED for nii.csv
-            self.target_encoder = joblib.load(os.path.join(model_dir, 'target_encoder.pkl'))
-            self.feature_names = joblib.load(os.path.join(model_dir, 'feature_names.pkl'))
-            
-            print("Predictor: Model and artifacts loaded successfully.")
-            print(f"Predictor: Expected features: {self.feature_names}")
-            
-        except Exception as e:
-            print(f"Predictor: Error loading artifacts: {e}")
-
-    def preprocess_input(self, features_dict):
-        """
-        Mimics process_data.py preprocessing for a single sample.
-        """
-        # Create DataFrame from input
-        df = pd.DataFrame([features_dict])
-        
-        # 1. Parse Blood Pressure if present as string "120/80"
-        if 'Blood_Pressure_mmHg' in df.columns and isinstance(df.iloc[0]['Blood_Pressure_mmHg'], str):
-            try:
-                bp = df.iloc[0]['Blood_Pressure_mmHg'].split('/')
-                df['BP_Systolic'] = float(bp[0])
-                df['BP_Diastolic'] = float(bp[1])
-                df = df.drop('Blood_Pressure_mmHg', axis=1)
-            except:
-                pass
-        
-        # Ensure 'BP_Systolic' and 'BP_Diastolic' exist if they were not parsed
-        if 'BP_Systolic' not in df.columns:
-             df['BP_Systolic'] = float(features_dict.get('BP_Systolic', 120))
-        if 'BP_Diastolic' not in df.columns:
-             df['BP_Diastolic'] = float(features_dict.get('BP_Diastolic', 80))
-             
-        # 2. Gender Encoding - REMOVED for nii.csv dataset
-        
-        # 3. Align Columns with Feature Names (fills missing with 0, orders correctly)
-        final_df = pd.DataFrame()
-        for col in self.feature_names:
-            if col in df.columns:
-                final_df[col] = df[col]
+            if os.path.exists(self.model_path):
+                self.model = joblib.load(self.model_path)
+                print("Model loaded successfully.")
             else:
-                # Default for missing columns
-                final_df[col] = 0 
-                
-        # Ensure numeric types
-        final_df = final_df.apply(pd.to_numeric, errors='coerce').fillna(0)
-        
-        return final_df
+                print(f"Error: Model file not found at {self.model_path}")
+                self.model = None
+        except Exception as e:
+            print(f"Error loading model: {e}")
+            self.model = None
 
-    def predict(self, features_dict):
-        """
-        Args:
-            features_dict (dict): Input features from frontend
-        Returns:
-            dict: {class, probabilities, confidence}
-        """
+    def predict(self, features):
         if not self.model:
             return {"error": "Model not loaded"}
-            
+
         try:
-            # Preprocess
-            X_df = self.preprocess_input(features_dict)
-            
-            # Scale
-            X_scaled = self.scaler.transform(X_df)
-            
-            # Predict Probabilities
-            proba = self.model.predict_proba(X_scaled)[0]
-            
-            # --- AGGRESSIVE THRESHOLDING FOR SENSITIVITY ---
-            classes = self.target_encoder.classes_ 
-            class_to_idx = {cls: idx for idx, cls in enumerate(classes)}
-            
-            idx_critical = class_to_idx.get('CRITICAL_STOP')
-            idx_warning = class_to_idx.get('Warning')
-            
-            # Defaults
-            prediction_idx = np.argmax(proba)
-            
-            # Thresholds: If Critical > 30%, flag it. If Warning > 40%, flag it.
-            if idx_critical is not None and proba[idx_critical] > 0.30:
-                prediction_idx = idx_critical
-                print(f"Predictor: Triggered Sensitive Critical Threshold (Prob: {proba[idx_critical]:.2f})")
-            elif idx_warning is not None and proba[idx_warning] > 0.40:
-                prediction_idx = idx_warning
-                print(f"Predictor: Triggered Sensitive Warning Threshold (Prob: {proba[idx_warning]:.2f})")
+            # Prepare input vector
+            data = {}
+            for col in self.feature_names:
+                # Get from features, default to 0 if missing
+                val = features.get(col, 0)
+                # Ensure numeric
+                try:
+                    val = float(val)
+                except:
+                    val = 0
+                data[col] = val
                 
-            prediction_label = self.target_encoder.inverse_transform([prediction_idx])[0]
+            # Create DataFrame
+            df = pd.DataFrame([data], columns=self.feature_names)
             
-            # Formulate response
-            classes = self.target_encoder.classes_
-            prob_dict = {str(classes[i]): float(proba[i]) for i in range(len(classes))}
+            # Predict
+            # LightGBM predict returns array
+            prediction = self.model.predict(df)[0]
             
+            # Get output probability if available, else just rely on class
+            confidence = 0.95 # Default high confidence if not available
+            risk_score = 0.0  # Default low risk
+
+            if hasattr(self.model, "predict_proba"):
+                probas = self.model.predict_proba(df)[0]
+                confidence = np.max(probas)
+                
+                # Calculate Risk Score (Severity)
+                # 0=Safe, 1=Warning, 2=Critical
+                # Risk Score = P(Warning)*0.5 + P(Critical)*1.0
+                # This ensures:
+                # - 100% Safe -> Risk Score 0.0
+                # - 100% Warning -> Risk Score 0.5
+                # - 100% Critical -> Risk Score 1.0
+                if len(probas) >= 3:
+                    p_warning = probas[1]
+                    p_critical = probas[2]
+                    risk_score = (p_warning * 0.5) + (p_critical * 1.0)
+                elif len(probas) == 2: # Binary case fallback (Safe vs Critical?)
+                    # Assuming 0=Safe, 1=Critical if binary
+                    risk_score = probas[1] 
+            
+            # Map Class to Label
+            # 0=Low Risk (Safe), 1=Moderate Risk (Warning), 2=High Risk (Critical)
+            risk_map = {0: "Safe", 1: "Warning", 2: "Critical"}
+            
+            risk_label = "Unknown"
+            if isinstance(prediction, (int, np.integer, float, np.floating)):
+                risk_label = risk_map.get(int(prediction), "Unknown")
+            else:
+                risk_label = str(prediction)
+                
             return {
-                'class': prediction_label,
-                'probabilities': prob_dict,
-                'confidence': float(max(proba))
+                "class": risk_label,
+                "confidence": float(confidence),
+                "risk_score": float(risk_score)
             }
+
         except Exception as e:
+            print(f"Prediction error: {e}")
+            # traceback
             import traceback
             traceback.print_exc()
             return {"error": str(e)}
-
-# Global instance
-predictor = Predictor()

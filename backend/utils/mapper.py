@@ -1,43 +1,44 @@
 import numpy as np
 
-def map_risk_to_visuals(prediction_result, age=45):
+def map_risk_to_visuals(prediction_result, age=45, features=None):
     """
     Maps ML prediction to visual heart parameters.
-    Supports old labels (Low/Medium/High) and new labels (Safe/Warning/CRITICAL_STOP).
+    Uses actual patient features if available, otherwise estimates.
     """
+    if features is None:
+        features = {}
+
     risk_class = prediction_result.get('class', 'Safe')
-    probs = prediction_result.get('probabilities', {})
+    confidence = prediction_result.get('confidence', 0.0)
     
-    # Map new labels to risk levels
+    # Map classes to levels
+    # 0/Safe -> Low
+    # 1/Warning -> Medium
+    # 2/Critical -> High
     risk_level_map = {
         'Safe': 'Low',
         'Warning': 'Medium',
-        'CRITICAL_STOP': 'High',
+        'Critical': 'High',
+        'Low Start': 'Low', # Legacy
         'Low': 'Low',
-        'Medium': 'Medium',
         'High': 'High'
     }
     
     mapped_risk = risk_level_map.get(risk_class, 'Low')
     
-    # Get probability of the "bad" outcome
-    # If High/CRITICAL_STOP exists, use that.
-    risk_proba = probs.get('CRITICAL_STOP', probs.get('High', 0.0))
-    if mapped_risk == 'Medium':
-         risk_proba = probs.get('Warning', probs.get('Medium', 0.0))
-    
     # 1. HEART RATE (BPM)
-    base_hr = 70
-    if mapped_risk == 'Low':
+    # Use actual resting HR if available, else estimate
+    if 'resting_heart_rate_bpm' in features and features['resting_heart_rate_bpm'] > 0:
+        heart_rate = features['resting_heart_rate_bpm']
+        # Add some random variation for "live" feel if desired, or keep static
+        # Let's keep it static + small jitter
+        heart_rate = float(heart_rate) + np.random.uniform(-2, 2)
+    else:
+        # Fallback estimation
+        base_hr = 70
+        if mapped_risk == 'Medium': base_hr = 85
+        if mapped_risk == 'High': base_hr = 100
         heart_rate = base_hr + np.random.uniform(-5, 5)
-    elif mapped_risk == 'Medium':
-        heart_rate = base_hr + 20 + np.random.uniform(-5, 10) # ~90 BPM
-    else: # High
-        heart_rate = base_hr + 50 + np.random.uniform(-5, 15) # ~120 BPM
-        
-    # Cap HR
-    max_hr = (220 - age) * 0.9
-    heart_rate = min(heart_rate, max_hr)
     
     # 2. COLOR MAPPING
     color_map = {
@@ -48,19 +49,32 @@ def map_risk_to_visuals(prediction_result, age=45):
     color = color_map.get(mapped_risk, '#4CAF50')
     
     # 3. ARRHYTHMIA TYPE
-    if mapped_risk == 'Low':
-        arrhythmia = "Normal Sinus Rhythm"
+    # Can infer from QTc if available?
+    qtc = features.get('qtc_interval_ms', 400)
+    if mapped_risk == 'High' or qtc > 500:
+        arrhythmia = "Prolonged QTc / Arrhythmia"
     elif mapped_risk == 'Medium':
         arrhythmia = "Sinus Tachycardia"
     else:
-        arrhythmia = "Atrial Fibrillation" if age > 60 else "Ventricular Tachycardia"
+        arrhythmia = "Normal Sinus Rhythm"
 
-    # 4. CONTRACTION INTENSITY
-    intensity = 1.0 + (risk_proba * 0.5) # 1.0 to 1.5
+    # 4. CONTRACTION INTENSITY (LVEF based?)
+    lvef = features.get('baseline_lvef_percent', 60)
+    # Lower LVEF = Weaker contraction?
+    # Normal LVEF is 55-70%. <50 is reduced.
+    # Visually: 1.0 is normal. 
+    # If LVEF is low, maybe intensity should be lower (weaker beat)?
+    # Or if High Risk, maybe "stressed" beat (faster/hard)?
+    # Let's map LVEF to intensity: 
+    # 60% -> 1.0
+    # 40% -> 0.7
+    intensity = max(0.5, float(lvef) / 60.0) 
     
-    # 5. HRV (lower is worse)
-    hrv = 60 - (risk_proba * 40)
-    hrv = max(10, hrv)
+    # 5. HRV (RMSSD)
+    if 'heart_rate_variability_rmssd' in features and features['heart_rate_variability_rmssd'] > 0:
+        hrv = features['heart_rate_variability_rmssd']
+    else:
+        hrv = 60 - (confidence * 40) if mapped_risk != 'Low' else 60
 
     return {
         'heart_rate': int(heart_rate),
@@ -68,7 +82,8 @@ def map_risk_to_visuals(prediction_result, age=45):
         'arrhythmia_type': arrhythmia,
         'contraction_intensity': float(intensity),
         'hrv': int(hrv),
-        'risk_score': float(risk_proba),
-        'risk_level': mapped_risk, # Return standardized level for UI
-        'original_label': risk_class
+        'risk_score': float(confidence),
+        'risk_level': mapped_risk,
+        'qtc': float(qtc),
+        'lvef': float(lvef)
     }
