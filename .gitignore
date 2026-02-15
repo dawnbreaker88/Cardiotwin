@@ -33,8 +33,9 @@ Thumbs.db
 frontend/dist/
 frontend/build/
 
-# Large data files (optional - remove if needed)
-*.csv
+# Large data files
+assessment_history.csv
+# *.csv (Commented out to allow sample_patient_data_20_labeled.csv)
 
 # Logs
 *.log

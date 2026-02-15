@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import sys
 
 class DBManager:
     def __init__(self, db_path):
@@ -28,6 +29,25 @@ class DBManager:
         try:
             conn.executescript(schema)
             conn.commit()
+            
+            # Auto-seed if patients table is empty
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) as count FROM patients")
+            count = cursor.fetchone()['count']
+            
+            if count == 0:
+                print("Database initialized. Seeding initial data...")
+                # Import migrate here to avoid circular dependency
+                ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                sys.path.append(os.path.join(ROOT_DIR, 'database'))
+                try:
+                    from migrate_data import migrate
+                    migrate(db=self)
+                except ImportError as e:
+                    print(f"Warning: Could not import migrate_data for seeding: {e}")
+                except Exception as e:
+                    print(f"Error during auto-seeding: {e}")
+                    
         finally:
             conn.close()
 

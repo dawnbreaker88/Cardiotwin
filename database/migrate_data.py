@@ -14,8 +14,9 @@ DB_PATH = os.path.join(os.path.dirname(__file__), 'heart_viz.db')
 PATIENT_CSV = os.path.join(BASE_DIR, 'sample_patient_data_20_labeled.csv')
 HISTORY_CSV = os.path.join(BASE_DIR, 'assessment_history.csv')
 
-def migrate():
-    db = DBManager(DB_PATH)
+def migrate(db=None, db_path=DB_PATH):
+    if db is None:
+        db = DBManager(db_path)
     
     # 1. Migrate Patients
     if os.path.exists(PATIENT_CSV):
