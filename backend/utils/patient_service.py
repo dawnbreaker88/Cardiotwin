@@ -2,242 +2,175 @@ import pandas as pd
 import os
 import json
 from datetime import datetime
+from .db_manager import DBManager
 
 class PatientService:
-    def __init__(self, csv_path):
-        self.csv_path = csv_path
-        self.history_path = os.path.join(os.path.dirname(csv_path), 'assessment_history.csv')
-        self.df = None
+    def __init__(self, db_path=None):
+        # Default to database folder in root
+        if db_path is None:
+            BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            self.db_path = os.path.join(BASE_DIR, 'database', 'heart_viz.db')
+        else:
+            self.db_path = db_path
+            
+        self.db = DBManager(self.db_path)
         self.load_data()
 
     def load_data(self):
+        """No longer strictly needed for SQL as we query on demand, 
+        but we can use it to verify connection or cache if needed."""
         try:
-            if os.path.exists(self.csv_path):
-                self.df = pd.read_csv(self.csv_path)
-                
-                # Check if this is the new demo data
-                if 'risk_label' in self.df.columns:
-                    print("PatientService: Detected demo data schema.")
-                    
-                    # Ensure Patient_ID exists and is persistent
-                    if 'Patient_ID' not in self.df.columns:
-                        print("PatientService: Adding Patient_ID column to demo data.")
-                        self.df.insert(0, 'Patient_ID', [f'P{i+1:03d}' for i in range(len(self.df))])
-                        # Save immediately to make it persistent
-                        self.df.to_csv(self.csv_path, index=False)
-                    
-                    # 2. Map Columns to Predictor Schema
-                    demo_map = {
-                        'age': 'age_years',
-                        'sex': 'sex_binary', 
-                        'resting_hr': 'resting_heart_rate_bpm',
-                        'systolic_bp': 'systolic_bp_mmHg',
-                        'diastolic_bp': 'diastolic_bp_mmHg',
-                        'hrv_rmssd': 'heart_rate_variability_rmssd',
-                        'qtc_baseline': 'qtc_interval_ms',
-                        'baseline_lvef': 'baseline_lvef_percent',
-                        'num_cycles': 'chemo_cycles_count',
-                        'dose_per_cycle': 'dose_per_cycle_mg_per_m2',
-                        'cumulative_dose': 'cumulative_dose_mg_per_m2'
-                    }
-                    self.df = self.df.rename(columns=demo_map)
-                    
-                    # 3. Map Risk Label to Status_Label
-                    risk_map = {
-                        'Low': 'Safe',
-                        'Moderate': 'Warning',
-                        'High': 'Critical'
-                    }
-                    self.df['Status_Label'] = self.df['risk_label'].map(risk_map).fillna('Safe')
-
-                else:
-                    # Legacy Schema Support
-                    # Standardize columns to match what frontend expects/what we used in training
-                    column_map = {
-                        'Heart_Wall_Thickness (mm)': 'Heart_Wall_Thickness_mm',
-                        'Dose_Administered (mg/m2)': 'Dose_Administered_mg_m2',
-                        'ECG_QRS_Width (ms)': 'ECG_QRS_Width_ms',
-                        'Blood_Oxygen (SpO2)': 'Blood_Oxygen_SpO2',
-                        'Blood_Pressure (mmHg)': 'Blood_Pressure_mmHg'
-                    }
-                    self.df = self.df.rename(columns=column_map)
-                    
-                    # Parse Blood Pressure if exists
-                    if 'Blood_Pressure_mmHg' in self.df.columns and self.df['Blood_Pressure_mmHg'].dtype == object:
-                        try:
-                            self.df[['BP_Systolic', 'BP_Diastolic']] = self.df['Blood_Pressure_mmHg'].str.split('/', expand=True).astype(float)
-                        except Exception as e:
-                            print(f"PatientService: Error parsing BP: {e}")
-                
-                print(f"PatientService: Loaded {len(self.df)} records.")
-            else:
-                print(f"PatientService: File not found at {self.csv_path}")
+            # Just verify we can connect/query
+            self.db.execute_query("SELECT 1")
+            print(f"PatientService: Connected to database at {self.db_path}")
         except Exception as e:
-            print(f"PatientService: Error loading data: {e}")
+            print(f"PatientService: Error connecting to database: {e}")
 
     def get_patient(self, patient_id):
-        if self.df is None:
-            return None
-        
-        patient = self.df[self.df['Patient_ID'] == patient_id]
-        if not patient.empty:
-            # Convert to dictionary and handle NaN
-            data = patient.iloc[0].to_dict()
-            return data
+        query = "SELECT * FROM patients WHERE patient_id = ?"
+        results = self.db.execute_query(query, (patient_id,))
+        if results:
+            # Result is already a dict thanks to sqlite3.Row
+            return results[0]
         return None
 
     def get_all_patient_ids(self):
-        if self.df is None:
-            return {"Safe": [], "Warning": [], "Critical": []}
+        query = "SELECT patient_id, status_label FROM patients"
+        results = self.db.execute_query(query)
         
-        # Group IDs by Status_Label
-        safe_mask = self.df['Status_Label'].isin(['Safe', 'Low Risk', 'Low'])
-        warning_mask = self.df['Status_Label'].isin(['Warning', 'Med Risk', 'Moderate'])
-        critical_mask = self.df['Status_Label'].isin(['CRITICAL_STOP', 'High Risk', 'Critical', 'High'])
+        data = {"Safe": [], "Warning": [], "Critical": []}
         
-        safe_ids = self.df[safe_mask]['Patient_ID'].unique().tolist()
-        warning_ids = self.df[warning_mask]['Patient_ID'].unique().tolist()
-        critical_ids = self.df[critical_mask]['Patient_ID'].unique().tolist()
+        if not results:
+            return data
+            
+        for row in results:
+            status = row['status_label']
+            pid = row['patient_id']
+            
+            # Map legacy or variant labels
+            if status in ['Safe', 'Low Risk', 'Low']:
+                data["Safe"].append(pid)
+            elif status in ['Warning', 'Med Risk', 'Moderate']:
+                data["Warning"].append(pid)
+            elif status in ['CRITICAL_STOP', 'High Risk', 'Critical', 'High']:
+                data["Critical"].append(pid)
+            else:
+                data["Safe"].append(pid) # Default
         
-        return {
-            "Safe": safe_ids,
-            "Warning": warning_ids,
-            "Critical": critical_ids
-        }
+        return data
 
     def save_assessment(self, patient_data, prediction, visuals):
-        """Saves an assessment to the history CSV."""
-        assessment = {
-            "assessment_id": f"AST-{datetime.now().strftime('%Y%m%d%H%M%S')}",
-            "timestamp": datetime.now().isoformat(),
-            "patient_id": patient_data.get('Patient_ID', 'UNKNOWN'),
-            "risk_level": prediction.get('class', 'Safe'),
-            "risk_score": visuals.get('risk_score', 0),
-            "input_data": json.dumps(patient_data),
-            "prediction_details": json.dumps(prediction)
+        """Saves an assessment to the history table in SQL."""
+        assessment_id = f"AST-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        timestamp = datetime.now().isoformat()
+        patient_id = patient_data.get('Patient_ID', patient_data.get('patient_id', 'UNKNOWN'))
+        risk_level = prediction.get('class', 'Safe')
+        risk_score = visuals.get('risk_score', 0)
+        
+        # Convert dicts to JSON strings for storage
+        input_data_json = json.dumps(patient_data)
+        prediction_details_json = json.dumps(prediction)
+        
+        query = """
+            INSERT INTO assessments (
+                assessment_id, timestamp, patient_id, risk_level, 
+                risk_score, input_data, prediction_details
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """
+        params = (
+            assessment_id, timestamp, patient_id, risk_level,
+            risk_score, input_data_json, prediction_details_json
+        )
+        
+        self.db.execute_query(query, params, commit=True)
+        
+        return {
+            "assessment_id": assessment_id,
+            "timestamp": timestamp,
+            "patient_id": patient_id,
+            "risk_level": risk_level,
+            "risk_score": risk_score
         }
-        
-        df_new = pd.DataFrame([assessment])
-        
-        if not os.path.exists(self.history_path):
-            df_new.to_csv(self.history_path, index=False)
-        else:
-            df_new.to_csv(self.history_path, mode='a', header=False, index=False)
-            
-        return assessment
 
     def get_history(self, limit=50):
-        """Retrieves past assessments."""
-        if not os.path.exists(self.history_path):
+        """Retrieves past assessments from SQLite."""
+        query = "SELECT * FROM assessments ORDER BY timestamp DESC LIMIT ?"
+        results = self.db.execute_query(query, (limit,))
+        
+        if not results:
             return []
             
-        try:
-            df_history = pd.read_csv(self.history_path)
-            # Convert JSON strings back to dicts if needed for frontend, 
-            # but usually frontend handles the display.
-            # Return most recent first
-            return df_history.sort_values(by='timestamp', ascending=False).head(limit).to_dict(orient='records')
-        except Exception as e:
-            print(f"PatientService: Error loading history: {e}")
-            return []
+        # Optional: parse JSON strings back to dicts if frontend needs them
+        # For now, keeping as is to match CSV behavior (where they were JSON strings in CSV)
+        return results
 
     def get_stats(self):
-        """Returns summary statistics for the dashboard."""
-        stats = {
-            "total_patients": len(self.df) if self.df is not None else 0,
-            "high_risk": 0,
-            "avg_risk": 0,
-            "recent_trend": []
-        }
-        
-        if not os.path.exists(self.history_path):
-            return stats
-            
+        """Returns summary statistics from the database."""
         try:
-            df_h = pd.read_csv(self.history_path)
-            if df_h.empty:
-                return stats
-                
-            total = len(df_h['patient_id'].unique())
-            high_risk = len(df_h[df_h['risk_level'] == 'Critical'])
-            avg_risk = df_h['risk_score'].mean()
+            # 1. Total Patients
+            total_res = self.db.execute_query("SELECT COUNT(*) as count FROM patients")
+            total_patients = total_res[0]['count'] if total_res else 0
             
-            # Simple trend: count per day for last 7 days
-            df_h['date'] = pd.to_datetime(df_h['timestamp']).dt.strftime('%m-%d')
-            trend = df_h.groupby('date').size().reset_index(name='count').tail(7).to_dict(orient='records')
+            # 2. High Risk count
+            high_res = self.db.execute_query("SELECT COUNT(*) as count FROM assessments WHERE risk_level = 'Critical'")
+            high_risk = high_res[0]['count'] if high_res else 0
+            
+            # 3. Avg Risk Score
+            avg_res = self.db.execute_query("SELECT AVG(risk_score) as avg_score FROM assessments")
+            avg_risk = avg_res[0]['avg_score'] if avg_res and avg_res[0]['avg_score'] is not None else 0
+            
+            # 4. Recent Trend (last 7 days of activity)
+            trend_query = """
+                SELECT strftime('%m-%d', timestamp) as date, COUNT(*) as count 
+                FROM assessments 
+                GROUP BY date 
+                ORDER BY date DESC 
+                LIMIT 7
+            """
+            trend_res = self.db.execute_query(trend_query)
+            trend = sorted(trend_res, key=lambda x: x['date']) if trend_res else []
             
             return {
-                "total_patients": total,
+                "total_patients": total_patients,
                 "high_risk": high_risk,
                 "avg_risk": round(avg_risk * 100, 1),
                 "recent_trend": trend
             }
         except Exception as e:
             print(f"PatientService: Error calculating stats: {e}")
-            return stats
+            return {
+                "total_patients": 0,
+                "high_risk": 0,
+                "avg_risk": 0,
+                "recent_trend": []
+            }
 
     def register_patient(self, patient_data):
-        """Adds a new patient to the main dataset."""
+        """Adds a new patient to the SQLite database."""
         try:
-            if self.df is None:
-                return False
-
-            # Check actual CSV header to be absolutely sure of column count/order
-            header_df = pd.read_csv(self.csv_path, nrows=0)
-            cols = header_df.columns.tolist()
+            # Mapping from frontend names to DB names
+            mapping = {
+                'patient_id': patient_data.get('Patient_ID', f"P{datetime.now().strftime('%H%M%S')}"),
+                'age_years': patient_data.get('age_years', patient_data.get('age', 45)),
+                'sex_binary': patient_data.get('sex_binary', patient_data.get('sex', 0)),
+                'resting_heart_rate_bpm': patient_data.get('resting_heart_rate_bpm', patient_data.get('resting_hr', 70)),
+                'systolic_bp_mmHg': patient_data.get('systolic_bp_mmHg', patient_data.get('systolic_bp', 120)),
+                'diastolic_bp_mmHg': patient_data.get('diastolic_bp_mmHg', patient_data.get('diastolic_bp', 80)),
+                'heart_rate_variability_rmssd': patient_data.get('heart_rate_variability_rmssd', patient_data.get('hrv_rmssd', 50)),
+                'qtc_interval_ms': patient_data.get('qtc_interval_ms', patient_data.get('qtc_baseline', 400)),
+                'baseline_lvef_percent': patient_data.get('baseline_lvef_percent', patient_data.get('baseline_lvef', 60)),
+                'chemo_cycles_count': patient_data.get('chemo_cycles_count', patient_data.get('num_cycles', 0)),
+                'dose_per_cycle_mg_per_m2': patient_data.get('dose_per_cycle_mg_per_m2', patient_data.get('dose_per_cycle', 0)),
+                'cumulative_dose_mg_per_m2': patient_data.get('cumulative_dose_mg_per_m2', patient_data.get('cumulative_dose', 0)),
+                'status_label': 'Safe'
+            }
             
-            # Map frontend names to demo schema if needed
-            is_demo = 'risk_label' in cols
+            cols = list(mapping.keys())
+            placeholders = ', '.join(['?'] * len(cols))
+            query = f"INSERT INTO patients ({', '.join(cols)}) VALUES ({placeholders})"
+            params = tuple(mapping.values())
             
-            if is_demo:
-                # Mapping from internal/frontend names back to demo CSV names
-                mapping = {
-                    'Patient_ID': patient_data.get('Patient_ID', f'P{len(self.df)+1:03d}'),
-                    'age': patient_data.get('age_years', 45),
-                    'sex': patient_data.get('sex_binary', 0),
-                    'resting_hr': patient_data.get('resting_heart_rate_bpm', 70),
-                    'systolic_bp': patient_data.get('systolic_bp_mmHg', 120),
-                    'diastolic_bp': patient_data.get('diastolic_bp_mmHg', 80),
-                    'hrv_rmssd': patient_data.get('heart_rate_variability_rmssd', 50),
-                    'qtc_baseline': patient_data.get('qtc_interval_ms', 400),
-                    'baseline_lvef': patient_data.get('baseline_lvef_percent', 60),
-                    'num_cycles': patient_data.get('chemo_cycles_count', 0),
-                    'dose_per_cycle': patient_data.get('dose_per_cycle_mg_per_m2', 0),
-                    'cumulative_dose': patient_data.get('cumulative_dose_mg_per_m2', 0),
-                    'risk_label': 'Low' # Default for registration
-                }
-                
-                # Check for trailing newline in file
-                needs_newline = False
-                if os.path.exists(self.csv_path):
-                    with open(self.csv_path, 'rb') as f:
-                        f.seek(0, os.SEEK_END)
-                        if f.tell() > 0:
-                            f.seek(-1, os.SEEK_END)
-                            if f.read(1) != b'\n':
-                                needs_newline = True
-
-                # Create a row that strictly follows the header order
-                row_data = [mapping.get(col, 0) for col in cols]
-                
-                # Append to CSV
-                with open(self.csv_path, 'a') as f:
-                    if needs_newline:
-                        f.write('\n')
-                    f.write(','.join(map(str, row_data)) + '\n')
-            else:
-                # Standard mapping (assuming Patient_ID is in header)
-                new_row = {col: patient_data.get(col, 0) for col in cols}
-                # Overwrite standard values if they differ in the input
-                # (e.g. mapping Status_Label from Safe)
-                if 'Status_Label' in cols:
-                    new_row['Status_Label'] = 'Safe'
-                    
-                df_new = pd.DataFrame([new_row])[cols] # Ensure column order matches
-                df_new.to_csv(self.csv_path, mode='a', header=False, index=False)
-            
-            # Reload data into memory
-            self.load_data()
+            self.db.execute_query(query, params, commit=True)
             return True
         except Exception as e:
             print(f"PatientService: Error registering patient: {e}")

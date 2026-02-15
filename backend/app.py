@@ -24,7 +24,8 @@ if not os.path.exists(CSV_PATH):
     CSV_PATH = os.path.join(BASE_DIR, '../../sample_patient_data_20_labeled.csv')
 
 predictor = Predictor()
-patient_service = PatientService(CSV_PATH)
+DB_PATH = os.path.join(BASE_DIR, '../database/heart_viz.db')
+patient_service = PatientService(DB_PATH)
 
 @app.route('/health', methods=['GET'])
 def health_check():
